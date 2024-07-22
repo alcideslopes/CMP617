@@ -1,0 +1,5 @@
+{
+    "original_text": "effective but too-tepid biopic",
+    "generated_text": "user\nTASK: According to PHRASE and SENTIMENT, list 4 similar but different phrases\n\n                                PHRASE: \"effective but too-tepid biopic\"\n                                SENTIMENT: positive\n                            \nassistant\nThe phrase \"effective but too-tepid biopic\" is a combination of \"effective\" and \"too-tepid.\" It means that the biopic is effective in some aspects but lacks the desired level of intensity or passion. The sentiment associated with this phrase is positive.\n\nThe other three similar but different phrases are:\n\n1. \"effective but too-tepid novel\"\n2. \"effective but too-tepid biography\"\n3. \"effective but too-tepid history\"\n\nThese phrases share the same sentiment but differ in the specific aspects of the work being evaluated.",
+    "label": 1
+}
