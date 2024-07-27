@@ -2,42 +2,68 @@ from datasets import load_dataset, DatasetDict
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import json
 from uuid import uuid4
+import torch
 
 dataset = load_dataset('cornell-movie-review-data/rotten_tomatoes')
-llm = "HuggingFaceTB/SmolLM-1.7B-Instruct"
+
 generated_size = 4
 
 label_map = {0: 'negative', 1: 'positive'}
 
 
 device = "cuda" # for GPU usage or "cpu" for CPU usage
-tokenizer = AutoTokenizer.from_pretrained(llm)
-# for multiple GPUs install accelerate and do `model = AutoModelForCausalLM.from_pretrained(checkpoint, device_map="auto")`
-model = AutoModelForCausalLM.from_pretrained(llm).to(device)
+
+model_id = "meta-llama/Meta-Llama-3-8B-Instruct"
+
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(
+    model_id,
+    torch_dtype=torch.bfloat16,
+    device_map=device,
+)
+
 
 id = 0
 for example in dataset['train']:
     
+    messages = [
+        {"role": "system", "content": "You are a movie reviewer who always evaluate movies based on a sentiment!"},
+        {"role": "user", "content": f"""TASK: According to folowing REVIEW and SENTIMENT, list {generated_size} similar but different movie reviews.\n
+                                        REVIEW: \"{example['text']}\"\n
+                                        SENTIMENT: {label_map[example['label']]}\n
+                                        SPECIFIC REQUIREMENTS: only generate an enumerated list without any other kind of text!\n
+                                    """},
+        ]
+
+    input_ids = tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        return_tensors="pt"
+    ).to(model.device)
+
+    terminators = [
+        tokenizer.eos_token_id,
+        tokenizer.convert_tokens_to_ids("<|eot_id|>")
+    ]
+
+    outputs = model.generate(
+        input_ids,
+        max_new_tokens=256,
+        eos_token_id=terminators,
+        do_sample=True,
+        temperature=0.6,
+        top_p=0.9,
+    )
+    response = outputs[0][input_ids.shape[-1]:]
+    output_text = tokenizer.decode(response, skip_special_tokens=True)
+
     new_instance = dict()
-
-    message = [{"role": "user", 
-                "content": f"""TASK: According to PHRASE and SENTIMENT, list {generated_size} similar but different phrases\n
-                                PHRASE: \"{example['text']}\"
-                                SENTIMENT: {label_map[example['label']]}
-                            """}]
-
-    input_text = tokenizer.apply_chat_template(message, tokenize=False)
-    inputs = tokenizer(input_text, return_tensors='pt', padding=True, truncation=True).to(device)
-    outputs = model.generate(inputs['input_ids'], attention_mask=inputs['attention_mask'], max_new_tokens=600, temperature=0.6, top_p=0.92, do_sample=True)
-    output_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-
 
     new_instance['original_text'] = example['text']
     new_instance['generated_text'] = output_text
     new_instance['label'] = example['label']
     
-    with open(f'{id}.json', 'w') as f: 
+    with open(f'output\\{id}.json', 'w') as f: 
         json.dump(new_instance, f, indent=4)
 
     id += 1
