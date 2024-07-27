@@ -4,69 +4,144 @@ import json
 from uuid import uuid4
 import torch
 
-dataset = load_dataset('cornell-movie-review-data/rotten_tomatoes')
-
-generated_size = 4
-
-label_map = {0: 'negative', 1: 'positive'}
+from extraction import Extractor
 
 
-device = "cuda" # for GPU usage or "cpu" for CPU usage
-
-model_id = "meta-llama/Meta-Llama-3-8B-Instruct"
-
-tokenizer = AutoTokenizer.from_pretrained(model_id)
-model = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    torch_dtype=torch.bfloat16,
-    device_map=device,
-)
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report
+import numpy as np
 
 
-id = 0
-for example in dataset['train']:
+extractor = Extractor('output')
+
+original_df, generated_df = extractor.extract()
+
+# df = generated_df
+
+X_train, y_train = original_df['text'], original_df['label']
+X_test, y_test = generated_df['text'], generated_df['label']
+
+
+
+class_0 = original_df[original_df['label'] == 0]
+class_1 = original_df[original_df['label'] == 1]
+
+# Reduce the number of samples in class 1
+class_1_reduced = class_1.sample(frac=0.25, random_state=42)  # Retain only 25% of class 1´
+
+generated_indices_to_keep = np.concatenate([np.arange(i*4, (i+1)*4) for i in class_1_reduced.index])
+generated_df_imbalanced = generated_df.iloc[generated_indices_to_keep]
+
+
+# Combine the balanced dataset
+df = pd.concat([class_0, class_1_reduced], axis=0)
+
+# Create corresponding imbalanced generated dataset
+
+
+
+# X_train, y_train = generated_df['text'], generated_df['label']
+# X_test, y_test = original_df['text'], original_df['label']
+
+
+
+
+# print(df)
+
+# Split the dataset into training and test sets
+X_train, X_test, y_train, y_test = train_test_split(df['text'], df['label'], test_size=0.2, random_state=42)
+
+
+
+
+
+
+
+# Vectorize the text data
+vectorizer = TfidfVectorizer()
+X_train_vec = vectorizer.fit_transform(X_train)
+X_test_vec = vectorizer.transform(X_test)
+
+# Train the classifier
+classifier = LogisticRegression()
+classifier.fit(X_train_vec, y_train)
+
+# Make predictions
+y_pred = classifier.predict(X_test_vec)
+
+# Evaluate the model
+accuracy = accuracy_score(y_test, y_pred)
+report = classification_report(y_test, y_pred)
+
+print(accuracy)
+print(report)
+
+# dataset = load_dataset('cornell-movie-review-data/rotten_tomatoes')
+
+# generated_size = 4
+
+# label_map = {0: 'negative', 1: 'positive'}
+
+
+# device = "cuda" # for GPU usage or "cpu" for CPU usage
+
+# model_id = "meta-llama/Meta-Llama-3-8B-Instruct"
+
+# tokenizer = AutoTokenizer.from_pretrained(model_id)
+# model = AutoModelForCausalLM.from_pretrained(
+#     model_id,
+#     torch_dtype=torch.bfloat16,
+#     device_map=device,
+# )
+
+
+# id = 0
+# for example in dataset['train']:
     
-    messages = [
-        {"role": "system", "content": "You are a movie reviewer who always evaluate movies based on a sentiment!"},
-        {"role": "user", "content": f"""TASK: According to folowing REVIEW and SENTIMENT, list {generated_size} similar but different movie reviews.\n
-                                        REVIEW: \"{example['text']}\"\n
-                                        SENTIMENT: {label_map[example['label']]}\n
-                                        SPECIFIC REQUIREMENTS: only generate an enumerated list without any other kind of text!\n
-                                    """},
-        ]
+#     messages = [
+#         {"role": "system", "content": "You are a movie reviewer who always evaluate movies based on a sentiment!"},
+#         {"role": "user", "content": f"""TASK: According to folowing REVIEW and SENTIMENT, list {generated_size} similar but different movie reviews.\n
+#                                         REVIEW: \"{example['text']}\"\n
+#                                         SENTIMENT: {label_map[example['label']]}\n
+#                                         SPECIFIC REQUIREMENTS: only generate an enumerated list without any other kind of text!\n
+#                                     """},
+#         ]
 
-    input_ids = tokenizer.apply_chat_template(
-        messages,
-        add_generation_prompt=True,
-        return_tensors="pt"
-    ).to(model.device)
+#     input_ids = tokenizer.apply_chat_template(
+#         messages,
+#         add_generation_prompt=True,
+#         return_tensors="pt"
+#     ).to(model.device)
 
-    terminators = [
-        tokenizer.eos_token_id,
-        tokenizer.convert_tokens_to_ids("<|eot_id|>")
-    ]
+#     terminators = [
+#         tokenizer.eos_token_id,
+#         tokenizer.convert_tokens_to_ids("<|eot_id|>")
+#     ]
 
-    outputs = model.generate(
-        input_ids,
-        max_new_tokens=256,
-        eos_token_id=terminators,
-        do_sample=True,
-        temperature=0.6,
-        top_p=0.9,
-    )
-    response = outputs[0][input_ids.shape[-1]:]
-    output_text = tokenizer.decode(response, skip_special_tokens=True)
+#     outputs = model.generate(
+#         input_ids,
+#         max_new_tokens=256,
+#         eos_token_id=terminators,
+#         do_sample=True,
+#         temperature=0.6,
+#         top_p=0.9,
+#     )
+#     response = outputs[0][input_ids.shape[-1]:]
+#     output_text = tokenizer.decode(response, skip_special_tokens=True)
 
-    new_instance = dict()
+#     new_instance = dict()
 
-    new_instance['original_text'] = example['text']
-    new_instance['generated_text'] = output_text
-    new_instance['label'] = example['label']
+#     new_instance['original_text'] = example['text']
+#     new_instance['generated_text'] = output_text
+#     new_instance['label'] = example['label']
     
-    with open(f'output\\{id}.json', 'w') as f: 
-        json.dump(new_instance, f, indent=4)
+#     with open(f'output\\{id}.json', 'w') as f: 
+#         json.dump(new_instance, f, indent=4)
 
-    id += 1
+#     id += 1
 # from transformers import AutoTokenizer
 
 # # Load the tokenizer
